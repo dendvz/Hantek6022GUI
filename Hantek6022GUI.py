@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
-import matplotlib
-matplotlib.use('TkAgg')
+import matplotlib as mpl
+#matplotlib.use('TkAgg')
 
 from numpy import arange, sin, pi
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.backend_bases import key_press_handler
+# from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
 from PyHT6022.LibUsbScope import Oscilloscope
 
@@ -17,11 +17,9 @@ else:
 import ttk
 import tkFont
 
-
 # Global variables
 global fontNormal
 global fontFixed
-
 
 ################################################################################
 class Selector(Tk.Spinbox):
@@ -143,10 +141,10 @@ class TimeBaseControl:
     self.timeBase.set(5e-6)
 
   def setTimeBase(self, value):
-    print "setTimeBase", value
+    print("setTimeBase", value)
 
   def setSampleRate(self, value):
-    print "setSampleRate", value
+    print("setSampleRate", value)
 
 ################################################################################
 class ChannelControl:
@@ -223,11 +221,11 @@ class ChannelControl:
 
   def onTrace(self, varname, elementname, mode):
     if varname == str(self.probeVar):
-      print 'probeVar({})'.format(self.channelIndex), self.probeVar.get()
+      print('probeVar({})'.format(self.channelIndex), self.probeVar.get())
       self.update()
 
   def setVoltageRange(self, value):
-    print 'setVoltageRange({})'.format(self.channelIndex), value
+    print('setVoltageRange({})'.format(self.channelIndex), value)
     self.update()
 
   def update(self):
@@ -241,10 +239,12 @@ class ChannelControl:
 class PlotArea:
   def __init__(self, master):
     self.master = master
-    f = Figure(figsize = (10, 8), dpi = 100, tight_layout = True)
+    f = Figure(tight_layout = True)
     a = f.add_subplot(111)
-    t = arange(0.0, 3.0, 0.01)
-    s = sin(2*pi*t)
+    a.set_axis_bgcolor('k')
+
+    t = arange(0.01, 6.0, 0.01)
+    s = sin(2*pi*t) / (2*pi*t)
 
     a.plot(t, s)
 
@@ -288,9 +288,6 @@ class MainApp:
     # TODO: Load settings from config file
 #    self.timeBase.set(100E-6)
 #    self.sampleRate.set(0x10)
-
-    # Temporary: 'Quit' button
-    Tk.Button(self.controlPanel, text = 'Quit', command = self.quit).grid()
 
   def quit(self):
     self.root.quit()     # stops mainloop
