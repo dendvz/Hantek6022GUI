@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import matplotlib as mpl
-#matplotlib.use('TkAgg')
+mpl.use('TkAgg')
 
 from numpy import arange, sin, pi
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -15,7 +15,7 @@ if sys.version_info[0] < 3:
 else:
   import tkinter as Tk
 import ttk
-import tkFont
+import tkFont, tkColorChooser
 
 # Global variables
 global fontNormal
@@ -27,7 +27,6 @@ class Selector(Tk.Spinbox):
   def __init__(self, master, values, callback = None):
     self.callback = callback
     self.boundVar = Tk.StringVar(master)
-    self.boundVar.trace(mode = 'w', callback = self.onTrace)
 
     # check whether values is list of strings, or list of (key, value) tuples
     # create self.values as list of (key, value) pairs
@@ -50,6 +49,7 @@ class Selector(Tk.Spinbox):
       width = width,
       justify = Tk.RIGHT,
       values = [item[1] for item in self.values],
+      command = self.update,
       textvariable = self.boundVar
     )
 
@@ -65,9 +65,8 @@ class Selector(Tk.Spinbox):
         self.boundVar.set(item[1])
         break
 
-  def onTrace(self, varname, elementname, mode):
-    if varname == str(self.boundVar) and self.callback:
-      self.callback(self.get())
+  def update(self):
+    self.callback(self.get())
 
 ################################################################################
 class TimeBaseControl:
@@ -169,11 +168,27 @@ class ChannelControl:
     (  0.1, '100 mV/div',  0x0a,  2.0 )
   ]
 
+  V_LIMIT = {
+    'x1_min'  :  0.1,
+    'x1_max'  :  5.0,
+    'x10_min' :  1.0,
+    'x10_max' : 50.0
+  }
+
   def __init__(self, device, channelIndex, master, callback = None):
 
     self.device = device
     self.channelIndex = channelIndex
+    self.master = master
     self.callback = callback
+    self.probe = 1
+
+    if channelIndex == 1:
+      self.color = '#FFFF00'
+    elif channelIndex == 2:
+      self.color = '#00FFFF'
+    else:
+      self.color = '#FFFFFF'
 
     frame = Tk.LabelFrame(master,
       text = 'CH{:1d}'.format(channelIndex),
@@ -184,15 +199,22 @@ class ChannelControl:
     )
     frame.grid()
 
+    self.colorChooser = Tk.Button(frame,
+      activebackground = self.color,
+      background = self.color,
+      command = self.setColor
+    )
+    self.colorChooser.grid(row = 0, columnspan = 2, sticky = 'NEWS', pady = 5)
+
     self.voltage = Selector(frame,
       values = self.V_SCALE,
       callback = self.setVoltageRange
     )
-    self.voltage.grid(row = 0, columnspan = 2, sticky = 'NEWS')
+    self.voltage.grid(row = 1, columnspan = 2, sticky = 'NEWS')
 
-    Tk.Label(frame, text = 'Probe', font = fontNormal).grid(row = 1, columnspan = 2, sticky = Tk.S)
+    Tk.Label(frame, text = 'Probe', font = fontNormal).grid(row = 2, columnspan = 2, sticky = 'S')
 
-    self.probeVar = Tk.IntVar()
+    self.probeVar = Tk.IntVar(master)
     self.probeVar.trace(mode = 'w', callback = self.onTrace)
 
     probeX1 = Tk.Radiobutton(frame,
@@ -201,7 +223,7 @@ class ChannelControl:
       variable = self.probeVar,
       indicatoron = 0,
       value = 1
-    ).grid(row = 2, sticky = 'NEWS')
+    ).grid(row = 3, sticky = 'NEWS')
 
     probeX10 = Tk.Radiobutton(frame,
       text = "x10",
@@ -209,32 +231,54 @@ class ChannelControl:
       variable = self.probeVar,
       indicatoron = 0,
       value = 10
-    ).grid(row = 2, column = 1, sticky = 'NEWS')
+    ).grid(row = 3, column = 1, sticky = 'NEWS')
 
     # TODO: Load settings from file
     self.probeVar.set(1)
     self.voltage.set(2.0)
 
-    frame.rowconfigure(0, minsize = 40)
-    frame.rowconfigure(1, minsize = 30)
-    frame.rowconfigure(2, minsize = 40)
+    frame.rowconfigure(0, minsize = 20)
+    frame.rowconfigure(1, minsize = 40)
+    frame.rowconfigure(2, minsize = 30)
+    frame.rowconfigure(3, minsize = 40)
 
   def onTrace(self, varname, elementname, mode):
     if varname == str(self.probeVar):
-      print('probeVar({})'.format(self.channelIndex), self.probeVar.get())
-      self.update()
+      self.update(probe = self.probeVar.get())
 
   def setVoltageRange(self, value):
-    print('setVoltageRange({})'.format(self.channelIndex), value)
-    self.update()
+    self.update(voltage = value)
 
-  def update(self):
-    if self.probeVar.get() == 10:
-      if self.voltage.get() < 1.0:
-        self.voltage.set(1.0)
-    else:
-      if self.voltage.get() > 5.0:
-        self.voltage.set(1.0)
+  def update(self, probe = None, voltage = None):
+    if probe:
+      self.probe = probe
+      if probe == 10:
+        self.voltage.set(self.voltage.get() * 10.0)
+        self.voltage.set(max(self.voltage.get(), self.V_LIMIT['x10_min']))
+        self.voltage.set(min(self.voltage.get(), self.V_LIMIT['x10_max']))
+      elif probe == 1:
+        self.voltage.set(self.voltage.get() / 10.0)
+        self.voltage.set(max(self.voltage.get(), self.V_LIMIT['x1_min']))
+        self.voltage.set(min(self.voltage.get(), self.V_LIMIT['x1_max']))
+    elif voltage:
+      if self.probe == 10:
+        self.voltage.set(voltage)
+        self.voltage.set(max(self.voltage.get(), self.V_LIMIT['x10_min']))
+        self.voltage.set(min(self.voltage.get(), self.V_LIMIT['x10_max']))
+      elif self.probe == 1:
+        self.voltage.set(voltage)
+        self.voltage.set(max(self.voltage.get(), self.V_LIMIT['x1_min']))
+        self.voltage.set(min(self.voltage.get(), self.V_LIMIT['x1_max']))
+
+  def setColor(self):
+    _, color = tkColorChooser.askcolor(
+      parent = self.master,
+      initialcolor = self.color,
+      title = 'CH{} Color'.format(self.channelIndex)
+    )
+    if color:
+      self.color = color
+      self.colorChooser.config(background = self.color)
 
 class PlotArea:
   def __init__(self, master):
@@ -243,10 +287,10 @@ class PlotArea:
     a = f.add_subplot(111)
     a.set_axis_bgcolor('k')
 
-    t = arange(0.01, 6.0, 0.01)
-    s = sin(2*pi*t) / (2*pi*t)
+    t = arange(0.0, 1000.0, 1.0)
+    s = 255 * (1 + sin(2*pi*t/100.0)) / 2
 
-    a.plot(t, s)
+    a.plot(t, s, '#ffff00')
 
     # a tk.DrawingArea
 
