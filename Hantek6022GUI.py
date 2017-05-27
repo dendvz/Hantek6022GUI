@@ -148,24 +148,17 @@ class TimeBaseControl:
 ################################################################################
 class ChannelControl:
 
-  VOLTAGE_RANGES = [
-    0x01, # +/- 5.0 V
-    0x02, # +/- 2.5 V
-    0x05, # +/- 1.0 V
-    0x0a  # +/- 0.5 V
-  ]
-
   V_SCALE = [
-    # value  text          range  scale
-    ( 50.0, ' 50  V/div',  0x01,  0.4 ),
-    ( 20.0, ' 20  V/div',  0x01,  1.0 ),
-    ( 10.0, ' 10  V/div',  0x02,  1.0 ),
-    (  5.0, '  5  V/div',  0x01,  0.4 ),
-    (  2.0, '  2  V/div',  0x01,  1.0 ),
-    (  1.0, '  1  V/div',  0x02,  1.0 ),
-    (  0.5, '500 mV/div',  0x05,  1.0 ),
-    (  0.2, '200 mV/div',  0x0a,  1.0 ),
-    (  0.1, '100 mV/div',  0x0a,  2.0 )
+    # value  text          _x1   _x10
+    ( 50.0, ' 50  V/div',     0, 0x01 ),
+    ( 20.0, ' 20  V/div',     0, 0x01 ),
+    ( 10.0, ' 10  V/div',     0, 0x02 ),
+    (  5.0, '  5  V/div',  0x01, 0x05 ),
+    (  2.0, '  2  V/div',  0x01, 0x0a ),
+    (  1.0, '  1  V/div',  0x02, 0x0a ),
+    (  0.5, '500 mV/div',  0x05,    0 ),
+    (  0.2, '200 mV/div',  0x0a,    0 ),
+    (  0.1, '100 mV/div',  0x0a,    0 )
   ]
 
   V_LIMIT = {
@@ -185,10 +178,13 @@ class ChannelControl:
 
     if channelIndex == 1:
       self.color = '#ffff00'
+      self.position = 0.5
     elif channelIndex == 2:
       self.color = '#00ffff'
+      self.position = -0.5
     else:
       self.color = '#ffffff'
+      self.position = 0.0
 
     frame = Tk.LabelFrame(master,
       text = 'CH{:1d}'.format(channelIndex),
@@ -239,7 +235,7 @@ class ChannelControl:
 
     # TODO: Load settings from file
     self.probeVar.set(1)
-    self.voltage.set(2.0)
+    self.voltage.set(1.0)
 
     frame.rowconfigure(1, minsize = 40)
     frame.rowconfigure(2, minsize = 30)
@@ -255,11 +251,11 @@ class ChannelControl:
   def update(self, probe = None, voltage = None):
     if probe:
       self.probe = probe
-      if probe == 10:
+      if self.probe == 10:
         self.voltage.set(self.voltage.get() * 10.0)
         self.voltage.set(max(self.voltage.get(), self.V_LIMIT['x10_min']))
         self.voltage.set(min(self.voltage.get(), self.V_LIMIT['x10_max']))
-      elif probe == 1:
+      elif self.probe == 1:
         self.voltage.set(self.voltage.get() / 10.0)
         self.voltage.set(max(self.voltage.get(), self.V_LIMIT['x1_min']))
         self.voltage.set(min(self.voltage.get(), self.V_LIMIT['x1_max']))
@@ -286,6 +282,54 @@ class ChannelControl:
         foreground = color,
         activebackground = color
       )
+
+  def getVoltageRange(self):
+    voltage = self.voltage.get()
+    if self.probe == 10:
+      for item in self.V_SCALE:
+        if voltage == item[0]:
+          return item[3]
+    elif self.probe == 1:
+      for item in self.V_SCALE:
+        if voltage == item[0]:
+          return item[2]
+    return 0
+
+  def getScaleFactor(self):
+    return 0.5 * self.probe * self.device.VOLTAGE_RANGES[self.getVoltageRange()][2] / self.voltage.get()
+
+class Reader:
+  def __init__(self, device, tb, ch1, ch2):
+    self.device = device
+    self.tb     = tb
+    self.ch1    = ch1
+    self.ch2    = ch2
+    device.setup()
+
+  def acquire(self):
+    sample_rate_index = 0x32
+    data_points = 0x400
+
+    self.device.open_handle()
+    self.device.set_sample_rate(sample_rate_index)
+    self.device.set_ch1_voltage_range(self.ch1.getVoltageRange())
+    self.device.set_ch2_voltage_range(self.ch2.getVoltageRange())
+
+    self.ch1_data, self.ch2_data = self.device.read_data(data_points)
+    self.device.close_handle()
+
+  def getData(self, channelIndex):
+    bias = 0x80
+    if channelIndex == 1:
+      scaleFactor = self.ch1.getScaleFactor() / bias
+      pos = self.ch1.position
+      return [pos + (v - bias) * scaleFactor for v in self.ch1_data[24:]]
+    elif channelIndex == 2:
+      scaleFactor = self.ch2.getScaleFactor() / bias
+      pos = self.ch2.position
+      return [pos + (v - bias) * scaleFactor for v in self.ch2_data[24:]]
+    else:
+      return []
 
 class PlotArea:
   def __init__(self, master):
@@ -342,14 +386,7 @@ class MainApp:
     self.createControlPanel()
     self.plotArea = PlotArea(self.root)
 
-    t = arange(0.0, 1000.0, 1.0)
-    s = 255 * (1 + sin(2 * pi * t / 100.0)) / 2
-    s = 0.5 + (s - 128) / 256.0
-    c = 255 * (1 + sin(2 * pi * t / 200.0) / (2 * pi * (t + 0.01) / 200.0)) / 2
-    c = -0.5 + (c - 128) / 256.0
-
-    self.plotArea.plot(t, s, self.ch1.color, c, self.ch2.color)
-    # a tk.DrawingArea
+    self.acquire()
 
     Tk.mainloop()
 
@@ -363,9 +400,21 @@ class MainApp:
     self.ch1 = ChannelControl(self.device, 1, self.controlPanel)
     self.ch2 = ChannelControl(self.device, 2, self.controlPanel)
 
+    self.reader = Reader(self.device, self.tb, self.ch1, self.ch2)
+
+#    Tk.Button(self.controlPanel, text = 'acquire', command = self.acquire).grid()
+
     # TODO: Load settings from config file
 #    self.timeBase.set(100E-6)
 #    self.sampleRate.set(0x10)
+
+  # This stuff does not work yet
+  def acquire(self):
+    self.reader.acquire()
+    self.plotArea.plot(arange(0.0, 1000.0, 1.0),
+      self.reader.getData(1), self.ch1.color,
+      self.reader.getData(2), self.ch2.color
+    )
 
   def quit(self):
     self.root.quit()     # stops mainloop
