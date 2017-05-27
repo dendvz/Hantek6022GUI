@@ -184,11 +184,11 @@ class ChannelControl:
     self.probe = 1
 
     if channelIndex == 1:
-      self.color = '#FFFF00'
+      self.color = '#ffff00'
     elif channelIndex == 2:
-      self.color = '#00FFFF'
+      self.color = '#00ffff'
     else:
-      self.color = '#FFFFFF'
+      self.color = '#ffffff'
 
     frame = Tk.LabelFrame(master,
       text = 'CH{:1d}'.format(channelIndex),
@@ -200,8 +200,12 @@ class ChannelControl:
     frame.grid()
 
     self.colorChooser = Tk.Button(frame,
+      text = self.color,
+      font = fontFixed,
       activebackground = self.color,
+      activeforeground = 'black',
       background = self.color,
+      foreground = self.color,
       command = self.setColor
     )
     self.colorChooser.grid(row = 0, columnspan = 2, sticky = 'NEWS', pady = 5)
@@ -237,7 +241,6 @@ class ChannelControl:
     self.probeVar.set(1)
     self.voltage.set(2.0)
 
-    frame.rowconfigure(0, minsize = 20)
     frame.rowconfigure(1, minsize = 40)
     frame.rowconfigure(2, minsize = 30)
     frame.rowconfigure(3, minsize = 40)
@@ -278,21 +281,39 @@ class ChannelControl:
     )
     if color:
       self.color = color
-      self.colorChooser.config(background = self.color)
+      self.colorChooser.config(text = color,
+        background = color,
+        foreground = color,
+        activebackground = color
+      )
 
 class PlotArea:
   def __init__(self, master):
     self.master = master
     f = Figure(tight_layout = True)
-    a = f.add_subplot(111)
-    a.set_axis_bgcolor('k')
 
-    t = arange(0.0, 1000.0, 1.0)
-    s = 255 * (1 + sin(2*pi*t/100.0)) / 2
+    self.axes = f.add_subplot(111)
+    self.axes.set_axis_bgcolor('k')
 
-    a.plot(t, s, '#ffff00')
+    self.axes.set_xlim((0.0, 1000.0), auto = False)
+    self.axes.set_ylim((-1.0, 1.0), auto = False)
+    self.axes.tick_params(
+      which       = 'both',
+      labelbottom = False,
+      labeltop    = False,
+      labelleft   = False,
+      labelright  = False
+    )
+    self.axes.set_axisbelow(False)
 
-    # a tk.DrawingArea
+    self.axes.set_xticks([500], minor = False)
+    self.axes.set_xticks([100.0 * x for x in range(10) if x % 5 != 0], minor = True)
+
+    self.axes.set_yticks([0], minor = False)
+    self.axes.set_yticks([0.25 * y for y in range(-4, 4) if y % 4 != 0], minor = True)
+
+    self.axes.grid(b = True, which = 'major', color = 'w', linestyle = '-')
+    self.axes.grid(b = True, which = 'minor', color = 'w', linestyle = ':')
 
     self.panel = Tk.Frame(master)
     self.panel.pack()
@@ -300,6 +321,10 @@ class PlotArea:
     self.canvas = FigureCanvasTkAgg(f, master = self.panel)
     self.canvas.show()
     self.canvas.get_tk_widget().pack(side = Tk.LEFT, fill = Tk.BOTH, expand = 1)
+
+  def plot(self, t, ch1_data, ch1_color, ch2_data, ch2_color):
+
+    self.axes.plot(t, ch1_data, ch1_color, t, ch2_data, ch2_color)
 
 class MainApp:
 
@@ -317,6 +342,15 @@ class MainApp:
     self.createControlPanel()
     self.plotArea = PlotArea(self.root)
 
+    t = arange(0.0, 1000.0, 1.0)
+    s = 255 * (1 + sin(2 * pi * t / 100.0)) / 2
+    s = 0.5 + (s - 128) / 256.0
+    c = 255 * (1 + sin(2 * pi * t / 200.0) / (2 * pi * (t + 0.01) / 200.0)) / 2
+    c = -0.5 + (c - 128) / 256.0
+
+    self.plotArea.plot(t, s, self.ch1.color, c, self.ch2.color)
+    # a tk.DrawingArea
+
     Tk.mainloop()
 
   def createControlPanel(self):
@@ -325,9 +359,9 @@ class MainApp:
 
     self.device = Oscilloscope()
 
-    tb = TimeBaseControl(self.device,    self.controlPanel)
-    ch1 = ChannelControl(self.device, 1, self.controlPanel)
-    ch2 = ChannelControl(self.device, 2, self.controlPanel)
+    self.tb = TimeBaseControl(self.device,    self.controlPanel)
+    self.ch1 = ChannelControl(self.device, 1, self.controlPanel)
+    self.ch2 = ChannelControl(self.device, 2, self.controlPanel)
 
     # TODO: Load settings from config file
 #    self.timeBase.set(100E-6)
