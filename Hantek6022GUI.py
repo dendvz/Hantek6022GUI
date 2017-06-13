@@ -6,7 +6,6 @@ mpl.use('TkAgg')
 from numpy import arange, sin, pi
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 # from matplotlib.backend_bases import key_press_handler
-from matplotlib.figure import Figure
 from PyHT6022.LibUsbScope import Oscilloscope
 
 import sys
@@ -20,6 +19,31 @@ import tkFont, tkColorChooser
 # Global variables
 global fontNormal
 global fontFixed
+
+class CONST:
+  CH1, CH2 = range(2)
+  MIN_X = 0
+  MAX_X = 1000
+  MIN_Y = -4
+  MAX_Y = 4
+
+'''
+    SAMPLE_RATES = {0x0A: ("100 KS/s", 100e3),
+                    0x14: ("200 KS/s", 200e3),
+                    0x32: ("500 KS/s", 500e3),
+                    0x01: ("1 MS/s", 1e6),
+                    0x04: ("4 MS/s", 4e6),
+                    0x08: ("8 MS/s", 8e6),
+                    0x10: ("16 MS/s", 16e6),
+                    0x30: ("24 MS/s", 24e6)}
+
+    VOLTAGE_RANGES = {0x01: ('+/- 5V', 0.0390625, 2.5),
+                      0x02: ('+/- 2.5V', 0.01953125, 1.25),
+                      0x05: ('+/- 1V', 0.0078125, 0.5),
+                      0x0a: ('+/- 500mV', 0.00390625, 0.25)}
+
+'''
+
 
 ################################################################################
 class Selector(Tk.Spinbox):
@@ -54,10 +78,7 @@ class Selector(Tk.Spinbox):
     )
 
   def get(self):
-    for item in self.values:
-      if item[1] == self.boundVar.get():
-        return item[0]
-    return None
+    return [item[0] for item in self.values if item[1] == self.boundVar.get()][0]
 
   def set(self, itemIndex):
     for item in self.values:
@@ -66,7 +87,8 @@ class Selector(Tk.Spinbox):
         break
 
   def update(self):
-    self.callback(self.get())
+    if self.callback:
+      self.callback(self.get())
 
 ################################################################################
 class TimeBaseControl:
@@ -101,14 +123,13 @@ class TimeBaseControl:
     ( 100E-09, '100 ns/div',  24E+06 )
   ]
 
-  def __init__(self, device, master):
+  def __init__(self, device, master, callback = None):
 
-    sampleRateList = []
-    for key in self.SAMPLE_RATES:
-      sampleRateList.append([key, device.SAMPLE_RATES[key][0]])
+    self.device = device
+    self.callback = callback
 
     frame = Tk.LabelFrame(master,
-      text = 'Horizontal',
+      text = 'Timebase',
       font = fontNormal,
       labelanchor = Tk.N,
       padx = 5,
@@ -116,34 +137,32 @@ class TimeBaseControl:
     )
     frame.grid()
 
-    Tk.Label(frame, text = "Timebase", font = fontNormal).grid(sticky = Tk.S)
-
     self.timeBase = Selector(frame,
       values = self.H_SCALE,
-      callback = self.setTimeBase
+      callback = self.update
     )
-    self.timeBase.grid(row = 1, sticky = 'NEWS')
+    self.timeBase.grid(row = 0, sticky = 'NEWS')
 
-    Tk.Label(frame, text = "Sample Rate", font = fontNormal).grid(row = 2, sticky = Tk.S)
+    frame.rowconfigure(0, minsize = 40)
 
-    self.sampleRate = Selector(frame,
-      values = sampleRateList,
-      callback = self.setSampleRate
-    )
-    self.sampleRate.grid(row = 3, sticky = 'NEWS')
+    self.timeBase.set(500E-06)
+    self.update()
 
-    frame.rowconfigure(0, minsize = 30)
-    frame.rowconfigure(1, minsize = 40)
-    frame.rowconfigure(2, minsize = 30)
-    frame.rowconfigure(3, minsize = 40)
+  def update(self, value = None):
+    if value == None:
+      value = self.timeBase.get()
+    for item in self.H_SCALE:
+      if value == item[0]:
+        self.sampleRateIndex = filter(
+          lambda i: self.device.SAMPLE_RATES[i][1] == item[2],
+          self.SAMPLE_RATES
+        )[0]
+        break
+    if self.callback:
+      self.callback()
 
-    self.timeBase.set(5e-6)
-
-  def setTimeBase(self, value):
-    print("setTimeBase", value)
-
-  def setSampleRate(self, value):
-    print("setSampleRate", value)
+  def getSampleRate(self):
+    return self.device.SAMPLE_RATES[self.sampleRateIndex][1]
 
 ################################################################################
 class ChannelControl:
@@ -168,20 +187,21 @@ class ChannelControl:
     'x10_max' : 50.0
   }
 
-  def __init__(self, device, channelIndex, master, callback = None):
+  def __init__(self, device, master, channelIndex, callback = None):
 
     self.device = device
     self.channelIndex = channelIndex
     self.master = master
     self.callback = callback
     self.probe = 1
+    self.trigger = 0.5
 
-    if channelIndex == 1:
+    if channelIndex == CONST.CH1:
       self.color = '#ffff00'
-      self.position = 0.5
-    elif channelIndex == 2:
+      self.position = 2
+    elif channelIndex == CONST.CH2:
       self.color = '#00ffff'
-      self.position = -0.5
+      self.position = -2
     else:
       self.color = '#ffffff'
       self.position = 0.0
@@ -269,6 +289,9 @@ class ChannelControl:
         self.voltage.set(max(self.voltage.get(), self.V_LIMIT['x1_min']))
         self.voltage.set(min(self.voltage.get(), self.V_LIMIT['x1_max']))
 
+    if self.callback:
+      self.callback()
+
   def setColor(self):
     _, color = tkColorChooser.askcolor(
       parent = self.master,
@@ -296,7 +319,7 @@ class ChannelControl:
     return 0
 
   def getScaleFactor(self):
-    return 0.5 * self.probe * self.device.VOLTAGE_RANGES[self.getVoltageRange()][2] / self.voltage.get()
+    return self.probe * self.device.VOLTAGE_RANGES[self.getVoltageRange()][2] / self.voltage.get()
 
 class Reader:
   def __init__(self, device, tb, ch1, ch2):
@@ -304,71 +327,45 @@ class Reader:
     self.tb     = tb
     self.ch1    = ch1
     self.ch2    = ch2
+    self.sampleCount = 0x400
     device.setup()
 
   def acquire(self):
-    sample_rate_index = 0x32
     data_points = 0x400
+    self.sampleCount = min(int(10 * self.tb.getSampleRate() * self.tb.timeBase.get()), data_points)
 
-    self.device.open_handle()
-    self.device.set_sample_rate(sample_rate_index)
-    self.device.set_ch1_voltage_range(self.ch1.getVoltageRange())
-    self.device.set_ch2_voltage_range(self.ch2.getVoltageRange())
+    try:
+      self.device.open_handle()
+      self.device.set_sample_rate(self.tb.sampleRateIndex)
+      self.device.set_ch1_voltage_range(self.ch1.getVoltageRange())
+      self.device.set_ch2_voltage_range(self.ch2.getVoltageRange())
 
-    self.ch1_data, self.ch2_data = self.device.read_data(data_points)
-    self.device.close_handle()
+      self.ch1_data, self.ch2_data = self.device.read_data(data_points)
+      self.device.close_handle()
+    except AssertionError:
+      t = arange(0.0, float(data_points), 1.0)
+      # samples per oscillation (1kHz)
+      spo = self.device.SAMPLE_RATES[self.tb.sampleRateIndex][1] / 1e3
+      k1 = 127
+      k2 = 127
+      self.ch1_data = k1 * sin((2 * pi / spo) * t) + 128
+      self.ch2_data = [k2 * (1 - int(2 * i / spo) % 2) + 128 for i in range(data_points)]
 
-  def getData(self, channelIndex):
+  def getData(self, channelIndex = None):
     bias = 0x80
-    if channelIndex == 1:
+    if channelIndex == None:
+      scaleFactor = 1000.0 / float(self.sampleCount)
+      return [i * scaleFactor for i in range(self.sampleCount)]
+    elif channelIndex == CONST.CH1:
       scaleFactor = self.ch1.getScaleFactor() / bias
-      pos = self.ch1.position
-      return [pos + (v - bias) * scaleFactor for v in self.ch1_data[24:]]
-    elif channelIndex == 2:
+      print "scaleFactor 1 =", scaleFactor
+      return [self.ch1.position + (v - bias) * scaleFactor for v in self.ch1_data[:self.sampleCount]]
+    elif channelIndex == CONST.CH2:
       scaleFactor = self.ch2.getScaleFactor() / bias
-      pos = self.ch2.position
-      return [pos + (v - bias) * scaleFactor for v in self.ch2_data[24:]]
+      print "scaleFactor 2 =", scaleFactor
+      return [self.ch2.position + (v - bias) * scaleFactor for v in self.ch2_data[:self.sampleCount]]
     else:
       return []
-
-class PlotArea:
-  def __init__(self, master):
-    self.master = master
-    f = Figure(tight_layout = True)
-
-    self.axes = f.add_subplot(111)
-    self.axes.set_axis_bgcolor('k')
-
-    self.axes.set_xlim((0.0, 1000.0), auto = False)
-    self.axes.set_ylim((-1.0, 1.0), auto = False)
-    self.axes.tick_params(
-      which       = 'both',
-      labelbottom = False,
-      labeltop    = False,
-      labelleft   = False,
-      labelright  = False
-    )
-    self.axes.set_axisbelow(False)
-
-    self.axes.set_xticks([500], minor = False)
-    self.axes.set_xticks([100.0 * x for x in range(10) if x % 5 != 0], minor = True)
-
-    self.axes.set_yticks([0], minor = False)
-    self.axes.set_yticks([0.25 * y for y in range(-4, 4) if y % 4 != 0], minor = True)
-
-    self.axes.grid(b = True, which = 'major', color = 'w', linestyle = '-')
-    self.axes.grid(b = True, which = 'minor', color = 'w', linestyle = ':')
-
-    self.panel = Tk.Frame(master)
-    self.panel.pack()
-
-    self.canvas = FigureCanvasTkAgg(f, master = self.panel)
-    self.canvas.show()
-    self.canvas.get_tk_widget().pack(side = Tk.LEFT, fill = Tk.BOTH, expand = 1)
-
-  def plot(self, t, ch1_data, ch1_color, ch2_data, ch2_color):
-
-    self.axes.plot(t, ch1_data, ch1_color, t, ch2_data, ch2_color)
 
 class MainApp:
 
@@ -380,29 +377,212 @@ class MainApp:
     self.root = Tk.Tk()
     self.root.wm_title("Hantek")
 
+    self.root.rowconfigure(0, weight = 1)
+    self.root.columnconfigure(0, weight = 1)
+
     fontNormal = tkFont.Font(family = 'Sans', size = 12)
     fontFixed  = tkFont.Font(family = 'Mono', size = 12)
 
-    self.createControlPanel()
-    self.plotArea = PlotArea(self.root)
+    self.controlPanel = Tk.Frame(self.root)
+    self.createControlPanel(self.controlPanel)
 
+    self.plotArea = Tk.Frame(self.root, borderwidth = 6)
+    self.createPlotArea(self.plotArea)
+
+    # Layout
+    self.controlPanel.grid(row = 0, column = 1, sticky = 'news', padx = 5, pady = 5)
+    self.plotArea.grid(row = 0, column = 0, sticky = 'news')
+
+    self.traces = []
     self.acquire()
 
     Tk.mainloop()
 
-  def createControlPanel(self):
-    self.controlPanel = Tk.Frame(self.root)
-    self.controlPanel.pack(side = Tk.RIGHT, padx = 5, pady = 5)
+  def createPlotArea(self, frame):
+
+    f = mpl.figure.Figure(figsize = (10, 8), facecolor = 'k')
+    f.subplots_adjust(left = 0.05, bottom = 0.15, right = 0.95, top = 0.95)
+
+    self.axes = f.add_subplot(111)
+    self.axes.set_axis_bgcolor('k')
+
+    self.axes.set_xlim((CONST.MIN_X, CONST.MAX_X), auto = False)
+    self.axes.set_ylim((CONST.MIN_Y, CONST.MAX_Y), auto = False)
+    self.axes.tick_params(
+      which       = 'both',
+      labelbottom = False,
+      labeltop    = False,
+      labelleft   = False,
+      labelright  = False
+    )
+    self.axes.set_axisbelow(False)
+
+    self.axes.set_xticks([(CONST.MIN_X + CONST.MAX_X) / 2], minor = False)
+    self.axes.set_xticks([100 * x for x in range(10) if x % 5 != 0], minor = True)
+
+    self.axes.set_yticks([(CONST.MIN_Y + CONST.MAX_Y) / 2], minor = False)
+    self.axes.set_yticks([y for y in range(CONST.MIN_Y, CONST.MAX_Y) if y % 4 != 0], minor = True)
+
+    self.axes.grid(b = True, which = 'major', color = 'w', linestyle = '-')
+    self.axes.grid(b = True, which = 'minor', color = 'w', linestyle = ':')
+
+    border = mpl.patches.Rectangle(
+      [CONST.MIN_X, CONST.MIN_Y],
+      width  = CONST.MAX_X - CONST.MIN_X,
+      height = CONST.MAX_Y - CONST.MIN_Y,
+      color = 'w',
+      fill = False,
+      linewidth = 2
+    )
+
+    self.axes.add_patch(border)
+    border.set_clip_on(False)
+
+    self.canvas = FigureCanvasTkAgg(f, master = frame)
+    self.canvas.show()
+    self.canvas.get_tk_widget().pack(fill = Tk.BOTH, expand = 1)
+    self.drawMarker(
+      direction = Tk.RIGHT,
+      position = self.ch1.position,
+      color = self.ch1.color,
+      text = 'CH{}'.format(self.ch1.channelIndex + 1)
+    )
+    self.drawMarker(
+      direction = Tk.RIGHT,
+      position = self.ch2.position,
+      color = self.ch2.color,
+      text = 'CH{}'.format(self.ch2.channelIndex + 1)
+    )
+    self.drawMarker(
+      direction = Tk.LEFT,
+      position = 3,
+      color = self.ch1.color,
+      text = 'TR{}'.format(self.ch1.channelIndex + 1)
+    )
+    self.drawMarker(
+      direction = Tk.LEFT,
+      position = -1,
+      color = self.ch2.color,
+      text = 'TR{}'.format(self.ch2.channelIndex + 1),
+      alpha = 0.15
+    )
+    self.drawMarker(
+      direction = Tk.BOTTOM,
+      position = 30,
+      color = 'w',
+      text = 'T'
+    )
+    # Cursors
+    self.drawMarker(
+      direction = Tk.TOP,
+      position = 250,
+      color = 'w',
+      text = '1',
+      alpha = 0.5
+    )
+    self.drawMarker(
+      direction = Tk.TOP,
+      position = 620,
+      color = 'w',
+      text = '2',
+      alpha = 0.5
+    )
+    self.drawChannelInfo(0)
+    self.drawChannelInfo(1)
+
+#    timeBase = self.reader.getData()
+#    self.ch1trace, self.ch2trace = self.axes.plot(
+#      timeBase, self.reader.getData(CONST.CH1), self.ch1.color,
+#      timeBase, self.reader.getData(CONST.CH2), self.ch2.color
+#    )
+
+  def drawMarker(self, direction = Tk.RIGHT, position = 0, color = 'w', text = '', alpha = 1.0):
+    if direction == Tk.LEFT:
+      tipX = CONST.MAX_X
+      tipY = position
+      offX = 0.05 * (CONST.MAX_X - CONST.MIN_X)
+      offY = 0
+    elif direction == Tk.RIGHT:
+      tipX = CONST.MIN_X
+      tipY = position
+      offX = -0.05 * (CONST.MAX_X - CONST.MIN_X)
+      offY = 0
+    elif direction == Tk.TOP:
+      tipX = position
+      tipY = CONST.MIN_Y
+      offX = 0
+      offY = -0.05 * (CONST.MAX_Y - CONST.MIN_Y)
+    elif direction == Tk.BOTTOM:
+      tipX = position
+      tipY = CONST.MAX_Y
+      offX = 0
+      offY = 0.05 * (CONST.MAX_Y - CONST.MIN_Y)
+    else:
+      return
+
+    self.axes.annotate(
+      '',
+      xy = (tipX, tipY),
+      xytext = (tipX + offX, tipY + offY),
+      ha = "center",
+      va = "center",
+      size = 10,
+      arrowprops = dict(
+        arrowstyle='simple, head_width=1.4, tail_width=1.4',
+        fc = color,
+        ec = color,
+        connectionstyle = "arc3",
+        clip_on = False,
+        alpha = alpha
+      )
+    )
+    self.axes.text(
+      tipX + offX / 1.8,
+      tipY + offY / 1.8,
+      text,
+      color = 'k',
+      weight = 'bold',
+      size = 11,
+      ha = "center",
+      va = "center"
+    )
+
+  def drawChannelInfo(self, channelIndex):
+    if channelIndex == 0:
+      color = self.ch1.color
+    else:
+      color = self.ch2.color
+
+    self.axes.text(
+      0,
+      -4.75 - 0.5 * channelIndex,
+      'CH{} Info'.format(channelIndex + 1),
+      color = color,
+      size = 16,
+      ha = "center",
+      va = "center",
+      clip_on = False
+    )
+#    ch1_info = Tk.Label(self.root, text = 'Ch1 Info...', anchor = Tk.W, font = fontFixed, bg = 'black', fg = self.ch1.color)
+#    ch1_info.grid(row = 1, sticky = 'news')
+#    ch2_info = Tk.Label(self.root, text = 'Ch2 Info...', anchor = Tk.W, font = fontFixed, bg = 'black', fg = self.ch2.color)
+#    ch2_info.grid(row = 2, sticky = 'news')
+
+  
+
+
+  def createControlPanel(self, frame):
 
     self.device = Oscilloscope()
+    self.reader = None
 
-    self.tb = TimeBaseControl(self.device,    self.controlPanel)
-    self.ch1 = ChannelControl(self.device, 1, self.controlPanel)
-    self.ch2 = ChannelControl(self.device, 2, self.controlPanel)
+    self.ch1 = ChannelControl(self.device, frame, CONST.CH1, self.acquire)
+    self.ch2 = ChannelControl(self.device, frame, CONST.CH2, self.acquire)
+    self.tb = TimeBaseControl(self.device, frame, self.acquire)
 
     self.reader = Reader(self.device, self.tb, self.ch1, self.ch2)
 
-#    Tk.Button(self.controlPanel, text = 'acquire', command = self.acquire).grid()
+#    Tk.Button(frame, text = 'acquire', command = self.acquire).grid()
 
     # TODO: Load settings from config file
 #    self.timeBase.set(100E-6)
@@ -410,11 +590,19 @@ class MainApp:
 
   # This stuff does not work yet
   def acquire(self):
-    self.reader.acquire()
-    self.plotArea.plot(arange(0.0, 1000.0, 1.0),
-      self.reader.getData(1), self.ch1.color,
-      self.reader.getData(2), self.ch2.color
-    )
+    if self.reader:
+      self.reader.acquire()
+
+      if len(self.traces) == 0:
+#      self.ch1trace.set_ydata(self.reader.getData(CONST.CH1))
+#      self.ch2trace.set_ydata(self.reader.getData(CONST.CH2))
+        t = self.reader.getData()
+        self.traces = self.axes.plot(
+          t, self.reader.getData(CONST.CH1), self.ch1.color,
+          t, self.reader.getData(CONST.CH2), self.ch2.color
+        )
+      else:
+        print "len=", len(self.traces)
 
   def quit(self):
     self.root.quit()     # stops mainloop
