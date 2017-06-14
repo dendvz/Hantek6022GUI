@@ -27,24 +27,6 @@ class CONST:
   MIN_Y = -4
   MAX_Y = 4
 
-'''
-    SAMPLE_RATES = {0x0A: ("100 KS/s", 100e3),
-                    0x14: ("200 KS/s", 200e3),
-                    0x32: ("500 KS/s", 500e3),
-                    0x01: ("1 MS/s", 1e6),
-                    0x04: ("4 MS/s", 4e6),
-                    0x08: ("8 MS/s", 8e6),
-                    0x10: ("16 MS/s", 16e6),
-                    0x30: ("24 MS/s", 24e6)}
-
-    VOLTAGE_RANGES = {0x01: ('+/- 5V', 0.0390625, 2.5),
-                      0x02: ('+/- 2.5V', 0.01953125, 1.25),
-                      0x05: ('+/- 1V', 0.0078125, 0.5),
-                      0x0a: ('+/- 500mV', 0.00390625, 0.25)}
-
-'''
-
-
 ################################################################################
 class Selector(Tk.Spinbox):
 
@@ -106,21 +88,21 @@ class TimeBaseControl:
 
   H_SCALE = [
     # tb_value,  tb_text,    sample_rate
-    (   5E-03, '  5 ms/div', 100E+03 ),
-    (   2E-03, '  2 ms/div', 100E+03 ),
-    (   1E-03, '  1 ms/div', 100E+03 ),
-    ( 500E-06, '500 us/div', 200E+03 ),
-    ( 200E-06, '200 us/div', 500E+03 ),
-    ( 100E-06, '100 us/div',   1E+06 ),
-    (  50E-06, ' 50 us/div',   1E+06 ),
-    (  20E-06, ' 20 us/div',   4E+06 ),
-    (  10E-06, ' 10 us/div',   8E+06 ),
-    (   5E-06, '  5 us/div',  16E+06 ),
-    (   2E-06, '  2 us/div',  24E+06 ),
-    (   1E-06, '  1 us/div',  24E+06 ),
-    ( 500E-09, '500 ns/div',  24E+06 ),
-    ( 200E-09, '200 ns/div',  24E+06 ),
-    ( 100E-09, '100 ns/div',  24E+06 )
+    (   5E-03, '  5 ms', 100E+03 ),
+    (   2E-03, '  2 ms', 100E+03 ),
+    (   1E-03, '  1 ms', 100E+03 ),
+    ( 500E-06, '500 us', 200E+03 ),
+    ( 200E-06, '200 us', 500E+03 ),
+    ( 100E-06, '100 us',   1E+06 ),
+    (  50E-06, ' 50 us',   1E+06 ),
+    (  20E-06, ' 20 us',   4E+06 ),
+    (  10E-06, ' 10 us',   8E+06 ),
+    (   5E-06, '  5 us',  16E+06 ),
+    (   2E-06, '  2 us',  24E+06 ),
+    (   1E-06, '  1 us',  24E+06 ),
+    ( 500E-09, '500 ns',  24E+06 ),
+    ( 200E-09, '200 ns',  24E+06 ),
+    ( 100E-09, '100 ns',  24E+06 )
   ]
 
   def __init__(self, device, master, callback = None):
@@ -161,23 +143,20 @@ class TimeBaseControl:
     if self.callback:
       self.callback()
 
-  def getSampleRate(self):
-    return self.device.SAMPLE_RATES[self.sampleRateIndex][1]
-
 ################################################################################
 class ChannelControl:
 
   V_SCALE = [
-    # value  text          _x1   _x10
-    ( 50.0, ' 50  V/div',     0, 0x01 ),
-    ( 20.0, ' 20  V/div',     0, 0x01 ),
-    ( 10.0, ' 10  V/div',     0, 0x02 ),
-    (  5.0, '  5  V/div',  0x01, 0x05 ),
-    (  2.0, '  2  V/div',  0x01, 0x0a ),
-    (  1.0, '  1  V/div',  0x02, 0x0a ),
-    (  0.5, '500 mV/div',  0x05,    0 ),
-    (  0.2, '200 mV/div',  0x0a,    0 ),
-    (  0.1, '100 mV/div',  0x0a,    0 )
+    # value  text       _x1  _x10
+    ( 50.0, ' 50 V ',     0, 0x01 ),
+    ( 20.0, ' 20 V ',     0, 0x01 ),
+    ( 10.0, ' 10 V ',     0, 0x02 ),
+    (  5.0, '  5 V ',  0x01, 0x05 ),
+    (  2.0, '  2 V ',  0x01, 0x0a ),
+    (  1.0, '  1 V ',  0x02, 0x0a ),
+    (  0.5, '500 mV',  0x05,    0 ),
+    (  0.2, '200 mV',  0x0a,    0 ),
+    (  0.1, '100 mV',  0x0a,    0 )
   ]
 
   V_LIMIT = {
@@ -255,7 +234,7 @@ class ChannelControl:
 
     # TODO: Load settings from file
     self.probeVar.set(1)
-    self.voltage.set(1.0)
+    self.voltage.set(2.0)
 
     frame.rowconfigure(1, minsize = 40)
     frame.rowconfigure(2, minsize = 30)
@@ -319,51 +298,75 @@ class ChannelControl:
     return 0
 
   def getScaleFactor(self):
-    return self.probe * self.device.VOLTAGE_RANGES[self.getVoltageRange()][2] / self.voltage.get()
+    # Strange units of VOLTAGE_RANGES[2] : 0.5 * V / div
+    return 2.0 * self.probe * self.device.VOLTAGE_RANGES[self.getVoltageRange()][2] / self.voltage.get()
 
 class Reader:
-  def __init__(self, device, tb, ch1, ch2):
+  def __init__(self, device):
     self.device = device
-    self.tb     = tb
-    self.ch1    = ch1
-    self.ch2    = ch2
+    self.sampleRate = None
+    self.timeBase   = None
+    self.ch1_vRange = None
+    self.ch2_vRange = None
     self.sampleCount = 0x400
     device.setup()
 
+  def setSampleRate(self, value):
+    self.sampleRate = value
+
+  def setTimeBase(self, value):
+    self.timeBase = value
+
+  def setVoltageRange(self, channelIndex, value):
+    if channelIndex == CONST.CH1:
+      self.ch1_vRange = value
+    elif channelIndex == CONST.CH2:
+      self.ch2_vRange = value
+    else:
+      pass
+
   def acquire(self):
     data_points = 0x400
-    self.sampleCount = min(int(10 * self.tb.getSampleRate() * self.tb.timeBase.get()), data_points)
+
+    self.sampleCount = min(
+      int(10 * self.device.SAMPLE_RATES[self.sampleRate][1] * self.timeBase),
+      data_points
+    )
 
     try:
       self.device.open_handle()
-      self.device.set_sample_rate(self.tb.sampleRateIndex)
-      self.device.set_ch1_voltage_range(self.ch1.getVoltageRange())
-      self.device.set_ch2_voltage_range(self.ch2.getVoltageRange())
+      self.device.set_sample_rate(self.sampleRate)
+      self.device.set_ch1_voltage_range(self.ch1_vRange)
+      self.device.set_ch2_voltage_range(self.ch2_vRange)
 
       self.ch1_data, self.ch2_data = self.device.read_data(data_points)
       self.device.close_handle()
     except AssertionError:
       t = arange(0.0, float(data_points), 1.0)
       # samples per oscillation (1kHz)
-      spo = self.device.SAMPLE_RATES[self.tb.sampleRateIndex][1] / 1e3
-      k1 = 127
-      k2 = 127
+      spo = self.device.SAMPLE_RATES[self.sampleRate][1] / 1e3
+      k1 = 90
+      k2 = 127.0 / self.device.VOLTAGE_RANGES[self.ch2_vRange][2]
       self.ch1_data = k1 * sin((2 * pi / spo) * t) + 128
       self.ch2_data = [k2 * (1 - int(2 * i / spo) % 2) + 128 for i in range(data_points)]
 
-  def getData(self, channelIndex = None):
-    bias = 0x80
-    if channelIndex == None:
-      scaleFactor = 1000.0 / float(self.sampleCount)
-      return [i * scaleFactor for i in range(self.sampleCount)]
-    elif channelIndex == CONST.CH1:
-      scaleFactor = self.ch1.getScaleFactor() / bias
-      print "scaleFactor 1 =", scaleFactor
-      return [self.ch1.position + (v - bias) * scaleFactor for v in self.ch1_data[:self.sampleCount]]
+  def getNumChannels(self):
+    return 2
+
+  def getTimeBase(self):
+    scaleFactor = 1000.0 / float(self.sampleCount)
+    return [i * scaleFactor for i in range(self.sampleCount)]
+
+  # Data normalized to range -1.0...+1.0
+  def getData(self, channelIndex):
+    if channelIndex == CONST.CH1:
+      bias = 128            # TODO: Read channel calibration info
+      norm = 1.0 / 127.0    # TODO: Read channel calibration info
+      return [norm * (v - bias) for v in self.ch1_data[:self.sampleCount]]
     elif channelIndex == CONST.CH2:
-      scaleFactor = self.ch2.getScaleFactor() / bias
-      print "scaleFactor 2 =", scaleFactor
-      return [self.ch2.position + (v - bias) * scaleFactor for v in self.ch2_data[:self.sampleCount]]
+      bias = 128            # TODO: Read channel calibration info
+      norm = 1.0 / 127.0    # TODO: Read channel calibration info
+      return [norm * (v - bias) for v in self.ch2_data[:self.sampleCount]]
     else:
       return []
 
@@ -401,7 +404,7 @@ class MainApp:
   def createPlotArea(self, frame):
 
     f = mpl.figure.Figure(figsize = (10, 8), facecolor = 'k')
-    f.subplots_adjust(left = 0.05, bottom = 0.15, right = 0.95, top = 0.95)
+    f.subplots_adjust(left = 0.05, bottom = 0.05, right = 0.95, top = 0.95)
 
     self.axes = f.add_subplot(111)
     self.axes.set_axis_bgcolor('k')
@@ -440,7 +443,10 @@ class MainApp:
 
     self.canvas = FigureCanvasTkAgg(f, master = frame)
     self.canvas.show()
-    self.canvas.get_tk_widget().pack(fill = Tk.BOTH, expand = 1)
+
+    frame.rowconfigure(1, weight = 1)
+    self.canvas.get_tk_widget().grid(row = 1, columnspan = 6, sticky = 'news')
+
     self.drawMarker(
       direction = Tk.RIGHT,
       position = self.ch1.position,
@@ -487,8 +493,27 @@ class MainApp:
       text = '2',
       alpha = 0.5
     )
-    self.drawChannelInfo(0)
-    self.drawChannelInfo(1)
+
+    self.tb_info  = []
+    self.ch1_info = []
+    self.ch2_info = []
+
+    for col in range(6):
+      self.tb_info.append(
+        Tk.Label(frame, text = 'TB:{}'.format(col), anchor = Tk.W, font = fontFixed, bg = 'black', fg = 'white')
+      )
+      self.ch1_info.append(
+        Tk.Label(frame, text = 'Ch1:{}'.format(col), anchor = Tk.W, font = fontFixed, bg = 'black', fg = self.ch1.color)
+      )
+      self.ch2_info.append(
+        Tk.Label(frame, text = 'Ch2:{}'.format(col), anchor = Tk.W, font = fontFixed, bg = 'black', fg = self.ch2.color)
+      )
+    # Layout
+    for col in range(6):
+      frame.columnconfigure(col, weight = 1)
+      self.tb_info[col].grid(row = 0, column = col, sticky = 'news')
+      self.ch1_info[col].grid(row = 2, column = col, sticky = 'news')
+      self.ch2_info[col].grid(row = 3, column = col, sticky = 'news')
 
 #    timeBase = self.reader.getData()
 #    self.ch1trace, self.ch2trace = self.axes.plot(
@@ -547,30 +572,6 @@ class MainApp:
       va = "center"
     )
 
-  def drawChannelInfo(self, channelIndex):
-    if channelIndex == 0:
-      color = self.ch1.color
-    else:
-      color = self.ch2.color
-
-    self.axes.text(
-      0,
-      -4.75 - 0.5 * channelIndex,
-      'CH{} Info'.format(channelIndex + 1),
-      color = color,
-      size = 16,
-      ha = "center",
-      va = "center",
-      clip_on = False
-    )
-#    ch1_info = Tk.Label(self.root, text = 'Ch1 Info...', anchor = Tk.W, font = fontFixed, bg = 'black', fg = self.ch1.color)
-#    ch1_info.grid(row = 1, sticky = 'news')
-#    ch2_info = Tk.Label(self.root, text = 'Ch2 Info...', anchor = Tk.W, font = fontFixed, bg = 'black', fg = self.ch2.color)
-#    ch2_info.grid(row = 2, sticky = 'news')
-
-  
-
-
   def createControlPanel(self, frame):
 
     self.device = Oscilloscope()
@@ -580,7 +581,7 @@ class MainApp:
     self.ch2 = ChannelControl(self.device, frame, CONST.CH2, self.acquire)
     self.tb = TimeBaseControl(self.device, frame, self.acquire)
 
-    self.reader = Reader(self.device, self.tb, self.ch1, self.ch2)
+    self.reader = Reader(self.device)
 
 #    Tk.Button(frame, text = 'acquire', command = self.acquire).grid()
 
@@ -591,16 +592,22 @@ class MainApp:
   # This stuff does not work yet
   def acquire(self):
     if self.reader:
+      self.reader.setSampleRate(self.tb.sampleRateIndex)
+      self.reader.setTimeBase(self.tb.timeBase.get())
+      self.reader.setVoltageRange(CONST.CH1, self.ch1.getVoltageRange())
+      self.reader.setVoltageRange(CONST.CH2, self.ch2.getVoltageRange())
+
       self.reader.acquire()
 
       if len(self.traces) == 0:
 #      self.ch1trace.set_ydata(self.reader.getData(CONST.CH1))
 #      self.ch2trace.set_ydata(self.reader.getData(CONST.CH2))
-        t = self.reader.getData()
-        self.traces = self.axes.plot(
-          t, self.reader.getData(CONST.CH1), self.ch1.color,
-          t, self.reader.getData(CONST.CH2), self.ch2.color
-        )
+        x = self.reader.getTimeBase()
+        k1 = self.ch1.getScaleFactor()
+        k2 = self.ch2.getScaleFactor()
+        y1 = [k1 * y + self.ch1.position for y in self.reader.getData(CONST.CH1)]
+        y2 = [k2 * y + self.ch2.position for y in self.reader.getData(CONST.CH2)]
+        self.traces = self.axes.plot(x, y1, self.ch1.color, x, y2, self.ch2.color)
       else:
         print "len=", len(self.traces)
 
